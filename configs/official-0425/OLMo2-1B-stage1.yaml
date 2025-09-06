@@ -70,7 +70,7 @@ tokenizer:
   identifier: tokenizers/allenai_dolma2.json
   truncate_direction: right
 
-save_folder: http://olmo-data.org/checkpoints/OLMo-small/${run_name}
+save_folder: ./Debug/${run_name}
 save_overwrite: false
 
 save_interval: 1000
