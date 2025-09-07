@@ -232,11 +232,11 @@ evaluators:
 data:
   pad_direction: right
   # generate_doc_lengths: true
-  num_workers: 32
+  num_workers: 4
   drop_last: true
-  pin_memory: true
-  prefetch_factor: 8
-  persistent_workers: true
+  pin_memory: false
+  prefetch_factor: 2
+  persistent_workers: false
   memmap_dtype: uint32
   timeout: 0
   instance_filter:
