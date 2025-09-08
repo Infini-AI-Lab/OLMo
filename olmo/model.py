@@ -686,9 +686,9 @@ class OLMoSequentialBlock(OLMoBlock):
         super().__init__(layer_id, config, cache)
         # Attention input projection. Projects x -> (q, k, v)
 
-        head_dim = config.d_model // config.n_heads
+        head_dim = config.head_dim
         self.fused_dims = (
-            config.d_model,
+            config.n_heads * head_dim,
             config.effective_n_kv_heads * head_dim,
             config.effective_n_kv_heads * head_dim,
         )
