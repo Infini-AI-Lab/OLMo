@@ -244,6 +244,8 @@ class ModelConfig(BaseConfig):
     The hidden size of the model.
     """
 
+    head_dim: int = 64
+
     n_heads: int = 12
     """
     The number of self-attention heads.
