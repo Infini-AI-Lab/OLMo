@@ -283,7 +283,7 @@ class RotaryEmbedding(nn.Module):
             return pos_sin[:, :, :seq_len, :], pos_cos[:, :, :seq_len, :]
 
         with torch.autocast(device.type, enabled=False):
-            dim = self.config.d_model // self.config.n_heads
+            dim = self.config.head_dim
             inv_freq = 1.0 / (
                 self.config.rope_theta ** (torch.arange(0, dim, 2, device=device, dtype=torch.float) / dim)
             )
@@ -435,10 +435,12 @@ class OLMoBlock(nn.Module):
             assert config.effective_n_kv_heads is not None
             self.k_norm = LayerNormBase.build(
                 config,
-                size=(config.d_model // config.n_heads) * config.effective_n_kv_heads,
+                size=config.head_dim * config.effective_n_kv_heads,
                 elementwise_affine=config.attention_layer_norm_with_affine,
             )
-            self.q_norm = LayerNormBase.build(config, elementwise_affine=config.attention_layer_norm_with_affine)
+            self.q_norm = LayerNormBase.build(config, 
+                size=config.head_dim * config.n_heads,
+                elementwise_affine=config.attention_layer_norm_with_affine)
 
         # Make sure QKV clip coefficient is positive, otherwise it's not well-defined.
         if config.clip_qkv is not None:
@@ -450,7 +452,7 @@ class OLMoBlock(nn.Module):
 
         # Attention output projection.
         self.attn_out = nn.Linear(
-            config.d_model, config.d_model, bias=config.include_bias, device=config.init_device
+            self.config.n_heads * self.config.head_dim, config.d_model, bias=config.include_bias, device=config.init_device
         )
 
         # Feed-forward output projection.
@@ -606,11 +608,11 @@ class OLMoBlock(nn.Module):
 
         # Move head forward to be next to the batch dim.
         # shape: (B, nh, T, hs)
-        q = q.view(B, T, self.config.n_heads, C // self.config.n_heads).transpose(1, 2)
+        q = q.view(B, T, self.config.n_heads, self.config.head_dim).transpose(1, 2)
         # shape: (B, n_kv_h, T, hs)
-        k = k.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads).transpose(1, 2)
+        k = k.view(B, T, self.config.effective_n_kv_heads, self.config.head_dim).transpose(1, 2)
         # shape: (B, n_kv_h, T, hs)
-        v = v.view(B, T, self.config.effective_n_kv_heads, C // self.config.n_heads).transpose(1, 2)
+        v = v.view(B, T, self.config.effective_n_kv_heads, self.config.head_dim).transpose(1, 2)
 
         if layer_past is not None:
             past_key, past_value = layer_past
@@ -648,7 +650,7 @@ class OLMoBlock(nn.Module):
         )
 
         # Re-assemble all head outputs side-by-side.
-        att = att.transpose(1, 2).contiguous().view(B, T, C)
+        att = att.transpose(1, 2).contiguous().view(B, T, self.config.n_heads * self.config.head_dim)
 
         # Apply output projection.
         return self.attn_out(att), present
