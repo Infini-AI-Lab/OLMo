@@ -48,7 +48,7 @@ from .config import (
 from .exceptions import OLMoConfigurationError
 from .initialization import init_normal
 from .torch_util import ensure_finite_, get_cumulative_document_lengths
-
+from MoSS import MoS_func, sparseK_func, attention_func
 if sys.version_info.minor > 8:
     from collections.abc import MutableMapping
 elif sys.version_info.minor == 8:
@@ -468,6 +468,13 @@ class OLMoBlock(nn.Module):
         if self.config.rope:
             self.rotary_emb = RotaryEmbedding(config, self.__cache)
 
+        self.moss_type = config.moss_type
+        self.sample = config.sample
+        self.normalize = config.normalize
+        self.weighted = config.weighted
+        self.n_selected_heads = config.n_selected_heads
+        self.block_size = config.block_size
+        self.n_selected_blocks = config.n_selected_blocks
         self.flash_attn_func = None
         self.flash_attn_varlen_func = None
         if config.flash_attention:
@@ -551,17 +558,41 @@ class OLMoBlock(nn.Module):
             assert self.flash_attn_varlen_func is not None, "flash-attn is required for document masking"
             assert attn_mask is None, "attn-mask is currently not supported with document masking"
             B, T, D = q.size(0), q.size(2), q.size(3)
-            r = self.flash_attn_varlen_func(
-                q.transpose(1, 2).view(B * T, -1, D),
-                k.transpose(1, 2).view(B * T, -1, D),
-                v.transpose(1, 2).view(B * T, -1, D),
-                cu_doc_lens,
-                cu_doc_lens,
-                max_doc_len,
-                max_doc_len,
-                dropout_p=dropout_p,
-                causal=is_causal,
-            )
+            
+            if self.moss_type == "none":
+                r = attention_func(
+                    q.transpose(1, 2).view(B * T, -1, D).contiguous(),
+                    k.transpose(1, 2).view(B * T, -1, D).contiguous(),
+                    v.transpose(1, 2).view(B * T, -1, D).contiguous(),
+                    cu_doc_lens
+                )
+            elif self.moss_type == "mos":
+                q = q.transpose(1, 2).reshape(B * T, -1, D)
+                k = k.transpose(1, 2).reshape(B * T, -1, D)
+                v = v.transpose(1, 2).reshape(B * T, -1, D)
+                router_logits = k.norm(dim=-1)
+                r = MoS_func(
+                    q, k, v, cu_doc_lens,
+                    router_logits, self.n_selected_heads,
+                    weighted=self.weighted, sample=self.sample
+                )
+            elif self.moss_type == "sparsek":
+                
+                q = q.transpose(1, 2).reshape(B * T, -1, D)
+                k = k.transpose(1, 2).reshape(B * T, -1, D)
+                v = v.transpose(1, 2).reshape(B * T, -1, D)
+                k = sparseK_func(k, self.block_size, self.n_selected_blocks,
+                                 self.sample, self.normalize)
+                v = sparseK_func(v, self.block_size, self.n_selected_blocks,
+                                 self.sample, False)
+                
+                r = attention_func(
+                    q, k, v, cu_doc_lens
+                )
+                
+            else:
+                raise NotImplementedError(self.moss_type)
+            
             return r.view(B, T, -1, D).transpose(1, 2)
         elif self.flash_attn_func is not None and attn_mask is None:
             r = self.flash_attn_func(
