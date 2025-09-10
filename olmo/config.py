@@ -285,6 +285,14 @@ class ModelConfig(BaseConfig):
     The activation function to use within the MLP layers.
     """
 
+    moss_type: str = "none"
+    sample: bool = False
+    normalize: bool = False
+    weighted: bool = False
+    n_selected_heads: int = 4
+    block_size: int = 8
+    n_selected_blocks: int = 8
+    
     block_type: BlockType = BlockType.sequential
     """
     The transformer block implementation.
